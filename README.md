@@ -44,10 +44,6 @@ A modern web-based lexical and syntax analyzer for the Z-Language programming la
 - ⚡ Fast and lightweight
 - 🔄 Smooth animations and transitions
 
-## 📸 Screenshots
-
-*(Add your screenshots here)*
-
 ## 🚀 Getting Started
 
 ### Prerequisites
