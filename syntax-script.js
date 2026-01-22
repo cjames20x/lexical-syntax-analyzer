@@ -1,8 +1,8 @@
 const KEYWORDS = [ 
-    'ALIAS', 'BLEND', 'BOOL', 'BOUNCE', 'CAP', 'CASE', 'CORE', 'DECI', 'DOUBLE',
+    'ALIAS', 'BIG', 'BLEND', 'BOOL', 'BOUNCE', 'CAP', 'CASE', 'CORE', 'CYCLE', 'DECI', 'DO', 'DOUBLE', 'DUO',
     'DROP', 'ELSE', 'EMOJI', 'EMPTY', 'ENUM', 'FAM', 'FIXED', 'FOR', 'GRAB',
     'IF', 'IMPORT', 'LENGTH', 'LETT', 'MAXI', 'MINI', 'MATIC', 'NEXT', 'NOCAP',
-    'NORM', 'NUMBS', 'OUT', 'SHADY', 'SPILL', 'STAY', 'STRUCT', 'SWIM', 'SWITCH',
+    'NORM', 'NUMBS', 'OUT', 'SHADY', 'SMALL', 'SPILL', 'STAY', 'STRUCT', 'SWIM', 'SWITCH',
     'TAG', 'TEXT', 'VIBE', 'WHILE', 'ZAVED'
 ];
 
@@ -88,13 +88,53 @@ function analyzeCode() {
 function performSyntaxAnalysis(code) {
     const lines = code.split('\n');
     const errors = [];
+    
+    // Define what words create variables
+    const DECLARATION_KEYWORDS = ['NUMBS', 'DECI', 'DUO', 'LETT', 'TEXT', 'BOOL', 'SMALL', 'BIG'];
+    const MODIFIERS = ['CAP', 'NOCAP', 'FIXED', 'SHADY'];
 
     lines.forEach((line, index) => {
         const lineNum = index + 1;
-        const trimmedLine = line.trim();
+        
+        // === 1. STRIP COMMENTS ===
+        let trimmedLine = line.split('//')[0];
+        trimmedLine = trimmedLine.split('#')[0].trim();
 
-        if (!trimmedLine || trimmedLine.startsWith('//') || trimmedLine.startsWith('#')) return;
+        if (!trimmedLine) return;
 
+        // A. Define the strict list of allowed operators
+        const ALLOWED_OPS = [
+            // Arithmetic
+            '+', '-', '*', '/', '%', 
+            '++', '--', 
+            // Assignment
+            '=', '*=', '+=', '-=', '/=', '%=', 
+            '&=', '|=', '^=', '>>=', '<<=',
+            // Comparison (ADDED THESE)
+            '==', '!=', '>=', '<=', '>', '<', '!' 
+        ];
+
+        // B. Temporarily remove content inside quotes to prevent false alarms 
+        const cleanLine = trimmedLine.replace(/"[^"]*"/g, '""').replace(/'[^']*'/g, "''");
+
+        // C. Find all sequences of operator characters
+        //    Matches combinations of: + - * / % = & | ^ > < !
+        const foundOps = cleanLine.match(/[+\-*/%=&|^><!]+/g);
+
+        if (foundOps) {
+            foundOps.forEach(op => {
+                // If the operator found is NOT in the allowed list, report error
+                if (!ALLOWED_OPS.includes(op)) {
+                    errors.push({
+                        line: lineNum,
+                        description: `Lexical Error: Invalid operator '${op}' detected.`
+                    });
+                }
+            });  
+        }
+
+        // === 2. SEMICOLON CHECK ===
+        // Ignore lines ending with '{', '}', or empty lines
         if (!trimmedLine.endsWith(';') && !trimmedLine.endsWith('{') && !trimmedLine.endsWith('}')) {
             errors.push({
                 line: lineNum,
@@ -102,47 +142,88 @@ function performSyntaxAnalysis(code) {
             });
         }
 
+        // === 3. LETT CHECK (Char) ===
         if (trimmedLine.startsWith('LETT') || trimmedLine.startsWith('Lett')) {
             const parts = trimmedLine.split(/\s+/);
-            if (parts[0] !== 'LETT') {
-                errors.push({
-                    line: lineNum,
-                    description: 'Invalid keyword - use LETT (uppercase)'
-                });
+            if (parts[0] !== 'LETT') errors.push({ line: lineNum, description: 'Invalid keyword - use LETT (uppercase)' });
+            
+            if (trimmedLine.includes('=')) {
+                const splitLine = trimmedLine.split('=');
+                let value = splitLine[1].trim();
+                if (value.endsWith(';')) value = value.slice(0, -1).trim();
+
+                if (!value.startsWith("'") || !value.endsWith("'")) {
+                    errors.push({ line: lineNum, description: "Type Error: 'LETT' requires a value in single quotes (e.g., 'A')" });
+                }
             }
-            if (parts.length < 2) {
-                errors.push({
-                    line: lineNum,
-                    description: 'Missing variable name after LETT'
-                });
+        }
+
+        // === 4. TEXT CHECK (String) ===
+        if (trimmedLine.startsWith('TEXT')) {
+            if (trimmedLine.includes('=')) {
+                const splitLine = trimmedLine.split('=');
+                let value = splitLine[1].trim();
+                if (value.endsWith(';')) value = value.slice(0, -1).trim();
+
+                if (!value.startsWith('"') || !value.endsWith('"')) {
+                    errors.push({ line: lineNum, description: "Type Error: 'TEXT' requires a value enclosed in double quotes (e.g., \"Hello\")" });
+                }
             }
         }
 
-        const openParens = (line.match(/\(/g) || []).length;
-        const closeParens = (line.match(/\)/g) || []).length;
-        if (openParens !== closeParens) {
-            errors.push({
-                line: lineNum,
-                description: 'Unmatched parentheses'
-            });
+        // === 5. SPILL (PRINT) CHECK ===
+        if (trimmedLine.startsWith('SPILL')) {
+            // Extract content between parentheses: SPILL("text", var) -> "text", var
+            const match = trimmedLine.match(/SPILL\s*\((.*)\)/);
+            if (match) {
+                let content = match[1].trim();
+                
+                // Count the number of double quotes in the content
+                const quoteCount = (content.match(/"/g) || []).length;
+                
+                if (quoteCount % 2 !== 0) {
+                    errors.push({ 
+                        line: lineNum, 
+                        description: "Syntax Error: Missing closing quote in SPILL statement" 
+                    });
+                }
+            }
         }
 
-        const openBraces = (line.match(/\{/g) || []).length;
-        const closeBraces = (line.match(/\}/g) || []).length;
-        if (openBraces !== closeBraces) {
-            errors.push({
-                line: lineNum,
-                description: 'Unmatched braces'
-            });
+        // === 6. IDENTIFIER VALIDATION ===
+        const tokens = trimmedLine.split(/[\s=;]+/);
+        let identifier = null;
+
+        // Check: FIXED NUMBS pi (Modifier + Type)
+        if (tokens.length >= 3 && MODIFIERS.includes(tokens[0]) && DECLARATION_KEYWORDS.includes(tokens[1])) {
+            identifier = tokens[2];
+        }
+        // Check: NUMBS age (Type only)
+        else if (tokens.length >= 2 && DECLARATION_KEYWORDS.includes(tokens[0])) {
+            identifier = tokens[1];
         }
 
-        if (line.includes('=') && !line.includes('==')) {
-            const beforeEquals = line.split('=')[0].trim();
-            if (!beforeEquals || beforeEquals.split(/\s+/).length > 2) {
-                errors.push({
-                    line: lineNum,
-                    description: 'Invalid assignment syntax'
-                });
+        if (identifier) {
+            if (/^\d/.test(identifier)) {
+                errors.push({ line: lineNum, description: `Invalid identifier '${identifier}': Cannot start with a number` });
+            }
+            else if (/[^a-zA-Z0-9_]/.test(identifier)) {
+                errors.push({ line: lineNum, description: `Invalid identifier '${identifier}': Cannot contain special characters` });
+            }
+        }
+
+        // === 7. ASSIGNMENT SYNTAX CHECK ===
+        const firstWord = tokens[0];
+        const isDeclaration = DECLARATION_KEYWORDS.includes(firstWord) || MODIFIERS.includes(firstWord);
+
+        if (isDeclaration && trimmedLine.includes('=') && !trimmedLine.includes('==')) {
+            const beforeEquals = trimmedLine.split('=')[0].trim();
+            const parts = beforeEquals ? beforeEquals.split(/\s+/) : [];
+            
+            const isModifier = parts.length === 3 && MODIFIERS.includes(parts[0]);
+            
+            if (!beforeEquals || (parts.length > 2 && !isModifier)) {
+                errors.push({ line: lineNum, description: 'Invalid assignment syntax' });
             }
         }
     });
@@ -384,15 +465,23 @@ class SyntaxHighlighter {
         const operatorPattern = new RegExp(`(${operators.join('|')})`, 'g');
         result = result.replace(operatorPattern, '###OPERATOR_START###$1###OPERATOR_END###');
         
-        result = result.replace(/([(){}\[\]:;,])/g, '###DELIMITER_START###$1###DELIMITER_END###');
+        result = result.replace(/(&lt;|&gt;|&amp;)|([(){}\[\]:;,])/g, function(match, entity, delimiter) {
+            if (entity) {
+                return entity; // It's an entity (like &gt;), do NOT touch the semicolon!
+            }
+            // It's a real delimiter, go ahead and highlight it
+            return '###DELIMITER_START###' + delimiter + '###DELIMITER_END###';
+        });
         
-        // Replace markers with actual HTML spans
-        result = result.replace(/###COMMENT_START###(.*?)###COMMENT_END###/g, `<span style="color: ${colors.comment}; font-style: italic;">$1</span>`);
-        result = result.replace(/###STRING_START###(.*?)###STRING_END###/g, `<span style="color: ${colors.string};">$1</span>`);
-        result = result.replace(/###NUMBER_START###(.*?)###NUMBER_END###/g, `<span style="color: ${colors.number};">$1</span>`);
-        result = result.replace(/###KEYWORD_START###(.*?)###KEYWORD_END###/g, `<span style="color: ${colors.keyword}; font-weight: bold;">$1</span>`);
-        result = result.replace(/###OPERATOR_START###(.*?)###OPERATOR_END###/g, `<span style="color: ${colors.operator};">$1</span>`);
-        result = result.replace(/###DELIMITER_START###(.*?)###DELIMITER_END###/g, `<span style="color: ${colors.delimiter};">$1</span>`);
+        // === FIX APPLIED HERE ===
+        // Changed (.*?) to ([\s\S]*?) to allow matching across newlines
+        
+        result = result.replace(/###COMMENT_START###([\s\S]*?)###COMMENT_END###/g, `<span style="color: ${colors.comment}; font-style: italic;">$1</span>`);
+        result = result.replace(/###STRING_START###([\s\S]*?)###STRING_END###/g, `<span style="color: ${colors.string};">$1</span>`);
+        result = result.replace(/###NUMBER_START###([\s\S]*?)###NUMBER_END###/g, `<span style="color: ${colors.number};">$1</span>`);
+        result = result.replace(/###KEYWORD_START###([\s\S]*?)###KEYWORD_END###/g, `<span style="color: ${colors.keyword}; font-weight: bold;">$1</span>`);
+        result = result.replace(/###OPERATOR_START###([\s\S]*?)###OPERATOR_END###/g, `<span style="color: ${colors.operator};">$1</span>`);
+        result = result.replace(/###DELIMITER_START###([\s\S]*?)###DELIMITER_END###/g, `<span style="color: ${colors.delimiter};">$1</span>`);
         
         return result;
     }

@@ -2,36 +2,36 @@
 const TokenType = {
     NULL: -1,
     // IDENTIFIERS
-    IDENTIFIER: 'IDENTIFIER',
-    NUMBER: 'NUMBER',
-    COMMENT: 'COMMENT',
+    IDENTIFIER: 'IDEN',
+    NUMBER: 'NUMB',
+    COMMENT: 'COM',
     // OPERATORS
-    OP_PLUS: 'OP_PLUS',
-    OP_MINUS: 'OP_MINUS',
-    OP_MULTIPLY: 'OP_MULTIPLY',
-    OP_DIVIDE: 'OP_DIVIDE',
-    OP_MODULO: 'OP_MODULO',
-    OP_ASSIGN: 'OP_ASSIGN',
-    OP_PLUS_ASS: 'OP_PLUS_ASS',
-    OP_MINUS_ASS: 'OP_MINUS_ASS',
-    OP_MULTIPLY_ASS: 'OP_MULTIPLY_ASS',
-    OP_DIVIDE_ASS: 'OP_DIVIDE_ASS',
-    OP_MOD_ASS: 'OP_MOD_ASS',
-    OP_XOR_ASS: 'OP_XOR_ASS',
-    OP_AND_ASS: 'OP_AND_ASS',
-    OP_OR_ASS: 'OP_OR_ASS',
+    OP_PLUS: 'OP_ADD',
+    OP_MINUS: 'OP_MIN',
+    OP_MULTIPLY: 'OP_MULT',
+    OP_DIVIDE: 'OP_DIV',
+    OP_MODULO: 'OP_MOD',
+    OP_ASSIGN: 'OP_ASS',
+    OP_PLUS_ASS: 'OP_ADDASS',
+    OP_MINUS_ASS: 'OP_MINASS',
+    OP_MULTIPLY_ASS: 'OP_MULTASS',
+    OP_DIVIDE_ASS: 'OP_DIVASS',
+    OP_MOD_ASS: 'OP_MODASS',
+    OP_XOR_ASS: 'OP_XORASS',
+    OP_AND_ASS: 'OP_ANDASS',
+    OP_OR_ASS: 'OP_ORASS',
     OP_LESS: 'OP_LESS',
-    OP_GREATER: 'OP_GREATER',
-    OP_LESS_EQUAL: 'OP_LESS_EQUAL',
-    OP_GREATER_EQUAL: 'OP_GREATER_EQUAL',
-    OP_EQUAL: 'OP_EQUAL',
-    OP_STRICT_EQUAL: 'OP_STRICT_EQUAL',
-    OP_NOT_EQUAL: 'OP_NOT_EQUAL',
+    OP_GREATER: 'OP_GREAT',
+    OP_LESS_EQUAL: 'OP_LESSEQ',
+    OP_GREATER_EQUAL: 'OP_GREATEQ',
+    OP_EQUAL: 'OP_EQ',
+    OP_STRICT_EQUAL: 'OP_STRICTEQ',
+    OP_NOT_EQUAL: 'OP_NOTEQ',
     OP_NOT: 'OP_NOT',
     OP_AND: 'OP_AND',
     OP_OR: 'OP_OR',
-    OP_INCREMENT: 'OP_INCREMENT',
-    OP_DECREMENT: 'OP_DECREMENT',
+    OP_INCREMENT: 'OP_INCRE',
+    OP_DECREMENT: 'OP_DECRE',
     // KEYWORDS
     KW_ALIAS: 'KW_ALIAS',
     KW_BIG: 'KW_BIG',
@@ -69,6 +69,7 @@ const TokenType = {
     KW_SHADY: 'KW_SHADY',
     KW_SPILL: 'KW_SPILL',
     KW_STAY: 'KW_STAY',
+    KW_STOP: 'KW_STOP',
     KW_STRUCT: 'KW_STRUCT',
     KW_SWIM: 'KW_SWIM',
     KW_SWITCH: 'KW_SWITCH',
@@ -79,20 +80,20 @@ const TokenType = {
     KW_ZAVED: 'KW_ZAVED',
     // FUNCTIONS
     FUNC_AVG: 'FUNC_AVG',
-    FUNC_ASCENDING: 'FUNC_ASCENDING',
-    FUNC_DESCENDING: 'FUNC_DESCENDING',
+    FUNC_ASCENDING: 'FUNC_ASC',
+    FUNC_DESCENDING: 'FUNC_DESC',
     FUNC_MAX: 'FUNC_MAX',
     FUNC_MIN: 'FUNC_MIN',
-    FUNC_FINDSTRING: 'FUNC_FINDSTRING',
+    FUNC_FINDSTRING: 'FUNC_FINDSTR',
     // DELIMITERS
-    DELI_COLON: 'DELI_COLON',
-    DELI_SEMICOLON: 'DELI_SEMICOLON',
+    DELI_COLON: 'DELI_COL',
+    DELI_SEMICOLON: 'DELI_SEMICOL',
     DELI_LPAREN: 'DELI_LPAREN',
     DELI_RPAREN: 'DELI_RPAREN',
     DELI_LBRACE: 'DELI_LBRACE',
     DELI_RBRACE: 'DELI_RBRACE',
-    DELI_LBRACKET: 'DELI_LBRACKET',
-    DELI_RBRACKET: 'DELI_RBRACKET',
+    DELI_LBRACKET: 'DELI_LBRACK',
+    DELI_RBRACKET: 'DELI_RBRACK',
     DELI_COMMA: 'DELI_COMMA',
     DELI_QUOTE: 'DELI_QUOTE',
     ERROR: 'ERROR',
@@ -137,6 +138,7 @@ const KEYWORDS = {
     'SHADY': TokenType.KW_SHADY,
     'SPILL': TokenType.KW_SPILL,
     'STAY': TokenType.KW_STAY,
+    'STOP': TokenType.KW_STOP,
     'STRUCT': TokenType.KW_STRUCT,
     'SWIM': TokenType.KW_SWIM,
     'SWITCH': TokenType.KW_SWITCH,
@@ -164,6 +166,13 @@ class Token {
 
 // Lexer Class
 class Lexer {
+    isInvalidNextOperator(c) {
+        // These characters should not immediately follow an operator 
+        // unless they are part of a valid compound like +=, ++, etc.
+        const forbidden = new Set(['*', '/', '%', '^', '=', '&', '|']);
+        return forbidden.has(c);
+    }
+
     constructor(source) {
         this.source = source;
         this.start = 0;
@@ -221,28 +230,77 @@ class Lexer {
     }
 
     handleNumber() {
+        // 1. Consume the integer part
         while (this.isDigit(this.peek())) {
             this.advance();
         }
+
+        // 2. Check for decimal point
+        if (this.peek() === '.' && this.isDigit(this.peekNext())) {
+            this.advance(); // Consume '.'
+            while (this.isDigit(this.peek())) {
+                this.advance(); // Consume fractional digits
+            }
+        }
+
+        // 3. Check for invalid identifiers starting with numbers (e.g., 12age)
+        if (this.isAlpha(this.peek()) || this.peek() === '_') {
+            while (this.isAlphaNumeric(this.peek())) {
+                this.advance();
+            }
+            const text = this.source.substring(this.start, this.current);
+            return this.error(`Invalid identifier: '${text}' cannot start with a number`);
+        }
+
         return this.makeToken(TokenType.NUMBER);
     }
 
     handleIdentifier() {
+        // 1. Consume the actual identifier (letters/numbers/underscore)
         while (this.isAlphaNumeric(this.peek())) {
             this.advance();
         }
 
+        const c = this.peek();
+
+        // === NEW FIX START ===
+        // Check if the identifier is immediately followed by a hyphen and a number (e.g., age-21)
+        // This catches invalid variable names without breaking "i--" or "a-b"
+        if (c === '-' && this.isDigit(this.peekNext())) {
+            this.advance(); // consume '-'
+            while (this.isAlphaNumeric(this.peek())) { // consume the rest (21)
+                this.advance();
+            }
+            const text = this.source.substring(this.start, this.current);
+            return this.error(`Invalid identifier: '${text}' cannot contain '-'`);
+        }
+        // === NEW FIX END ===
+
+        // 2. CHECK SEPARATORS
+        const validSeparators = new Set([
+            ' ', '\t', '\r', '\n', '\0', 
+            ';', ',', ':', '.',
+            '(', ')', '{', '}', '[', ']', 
+            '"', "'",
+            '+', '-', '*', '/', '%', '=', '!', '<', '>', '&', '|', '^' 
+        ]);
+
+        if (!validSeparators.has(c)) {
+            // This catches actual illegal symbols like @, #, $, ?, etc.
+            while (!validSeparators.has(this.peek())) {
+                this.advance();
+            }
+            const text = this.source.substring(this.start, this.current);
+            return this.error(`Invalid identifier: '${text}' cannot contain special characters`);
+        }
+
         const text = this.source.substring(this.start, this.current);
+        const upperText = text.toUpperCase();
 
-        if (text in KEYWORDS) {
-            return this.makeToken(KEYWORDS[text]);
+        if (upperText in KEYWORDS) {
+            return this.makeToken(KEYWORDS[upperText]);
         }
-
-        // Check if it's an invalid token (all uppercase but not a keyword)
-        if (text === text.toUpperCase() && text.match(/[A-Z]/)) {
-            return this.error(`Invalid token: '${text}'`);
-        }
-
+        
         return this.makeToken(TokenType.IDENTIFIER);
     }
 
@@ -312,34 +370,105 @@ class Lexer {
         if (c === '+') {
             if (this.match('+')) return this.makeToken(TokenType.OP_INCREMENT);
             if (this.match('=')) return this.makeToken(TokenType.OP_PLUS_ASS);
+            
+            // ERROR CHECK: +* or +/ or +% etc.
+            if (this.isInvalidNextOperator(this.peek())) {
+                return this.error(`Invalid operator sequence: '+${this.peek()}'`);
+            }
+
+            // Check for invalid identifier start (e.g. +age)
+            if (this.isAlpha(this.peek()) || this.peek() === '_') {
+                return this.handleInvalidIdentifierStart(c);
+            }
             return this.makeToken(TokenType.OP_PLUS);
         }
 
         if (c === '-') {
             if (this.match('-')) return this.makeToken(TokenType.OP_DECREMENT);
             if (this.match('=')) return this.makeToken(TokenType.OP_MINUS_ASS);
+            
+            // ERROR CHECK: -* or -/ or -% etc.
+            if (this.isInvalidNextOperator(this.peek())) {
+                return this.error(`Invalid operator sequence: '-${this.peek()}'`);
+            }
+
+            if (this.isAlpha(this.peek()) || this.peek() === '_') {
+                return this.handleInvalidIdentifierStart(c);
+            }
             return this.makeToken(TokenType.OP_MINUS);
         }
 
         if (c === '*') {
-            if (this.match('=')) return this.makeToken(TokenType.OP_MULTIPLY_ASS);
+            if (this.match('=')) {
+                // ERROR CHECK: Catch *== 
+                if (this.peek() === '=') {
+                    this.advance(); // consume the invalid =
+                    return this.error("Invalid operator: '*==' is not supported");
+                }
+                return this.makeToken(TokenType.OP_MULTIPLY_ASS);
+            }
+
+            // ERROR CHECK: Catch +* (handled in +), but also ** or */
+            if (this.isInvalidNextOperator(this.peek())) {
+                return this.error(`Invalid operator sequence: '*${this.peek()}'`);
+            }
+
+            if (this.isAlpha(this.peek()) || this.peek() === '_') {
+                return this.handleInvalidIdentifierStart(c);
+            }
             return this.makeToken(TokenType.OP_MULTIPLY);
         }
 
         if (c === '/') {
-            if (this.match('=')) return this.makeToken(TokenType.OP_DIVIDE_ASS);
+            if (this.match('/')) {
+                // Comment logic
+                while (this.peek() !== '\n' && !this.isAtEnd()) {
+                    this.advance();
+                }
+                return this.makeToken(TokenType.COMMENT);
+            }
+
+            if (this.match('=')) {
+                 // ERROR CHECK: Catch /==
+                 if (this.peek() === '=') {
+                    this.advance();
+                    return this.error("Invalid operator: '/==' is not supported");
+                }
+                return this.makeToken(TokenType.OP_DIVIDE_ASS);
+            }
+
+            // ERROR CHECK: Catch /+ or /*
+            if (this.isInvalidNextOperator(this.peek())) {
+                return this.error(`Invalid operator sequence: '/${this.peek()}'`);
+            }
+
+            if (this.isAlpha(this.peek()) || this.peek() === '_') {
+                return this.handleInvalidIdentifierStart(c);
+            }
             return this.makeToken(TokenType.OP_DIVIDE);
         }
 
         if (c === '%') {
             if (this.match('=')) return this.makeToken(TokenType.OP_MOD_ASS);
+            
+            // ERROR CHECK
+            if (this.isInvalidNextOperator(this.peek())) {
+                return this.error(`Invalid operator sequence: '%${this.peek()}'`);
+            }
+
+            if (this.isAlpha(this.peek()) || this.peek() === '_') { 
+                return this.handleInvalidIdentifierStart(c);
+            }
             return this.makeToken(TokenType.OP_MODULO);
         }
 
         if (c === '=') {
             if (this.match('=')) {
-                if (this.match('=')) {
-                    return this.makeToken(TokenType.OP_STRICT_EQUAL);
+                // ERROR CHECK: Catch ===
+                // We removed the support for OP_STRICT_EQUAL and replaced it with this error
+                if (this.peek() === '=') {
+                    this.advance(); // consume the third =
+                    return this.error("Invalid operator: '===' is not supported");
                 }
                 return this.makeToken(TokenType.OP_EQUAL);
             }
@@ -396,7 +525,17 @@ class Lexer {
         }
 
         // Skip unexpected characters and continue
-        return this.scanToken();
+        if (this.isAlpha(this.peek()) || this.isDigit(this.peek()) || this.peek() === '_') {
+             while (this.isAlphaNumeric(this.peek())) {
+                 this.advance();
+             }
+             const text = this.source.substring(this.start, this.current);
+             // Outputs the specific error format you requested
+             return this.error(`Invalid identifier: '${text}' cannot start with a special character`);
+        }
+
+        // Default error for a standalone invalid character
+        return this.error(`Invalid character: '${c}'`);
     }
 
     isDigit(c) {
@@ -409,6 +548,15 @@ class Lexer {
 
     isAlphaNumeric(c) {
         return this.isAlpha(c) || this.isDigit(c) || c === '_';
+    }
+
+    handleInvalidIdentifierStart(startChar) {
+        let text = startChar;
+        // Consume the rest of the attached letters/numbers
+        while (this.isAlphaNumeric(this.peek()) || this.peek() === '_') {
+            text += this.advance();
+        }
+        return this.error(`Invalid identifier: '${text}' cannot start with a special character`);
     }
 }
 
@@ -475,6 +623,33 @@ function clearAll() {
     `;
 }
 
+function validateTokens(tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+        // Check if we have enough tokens ahead to form: LETT name = value
+        if (i + 3 < tokens.length) {
+            const tokenType = tokens[i].type;
+            const nextType = tokens[i+1].type;
+            const assignType = tokens[i+2].type;
+            const valueToken = tokens[i+3];
+
+            // RULE: If we see 'LETT', followed by an IDEN, followed by '=',
+            // the NEXT token MUST be a String/Char literal (DELI_QUOTE).
+            if (tokenType === TokenType.KW_LETT && 
+                nextType === TokenType.IDENTIFIER && 
+                assignType === TokenType.OP_ASSIGN) {
+                
+                // If the value is NOT in quotes (e.g., it's an Identifier like 'A' or a Number)
+                if (valueToken.type !== TokenType.DELI_QUOTE) {
+                    // Force change this token to an ERROR
+                    valueToken.type = TokenType.ERROR;
+                    valueToken.lexeme = `Type Error: Value for 'LETT' must be a character in single quotes (e.g. 'A'). Found: ${valueToken.lexeme}`;
+                }
+            }
+        }
+    }
+    return tokens;
+}
+
 function analyzeCode() {
     const code = document.getElementById('codeEditor').value.trim();
     
@@ -491,26 +666,41 @@ function analyzeCode() {
     }
 
     const lexer = new Lexer(code);
-    const tokens = [];
-    let errorCount = 0;
-
+    let tokens = []; // Changed to let so we can modify it
+    
+    // 1. Generate all tokens first
     while (true) {
         const token = lexer.scanToken();
         tokens.push(token);
-        if (token.type === TokenType.ERROR) {
-            errorCount++;
-        }
         if (token.type === TokenType.EOF) {
             break;
         }
     }
 
+    // 2. RUN VALIDATION (The Fix)
+    // This checks for the LETT rule violations
+    tokens = validateTokens(tokens);
+
+    // 3. Count errors AFTER validation
+    let errorCount = 0;
+    tokens.forEach(token => {
+        if (token.type === TokenType.ERROR) {
+            errorCount++;
+        }
+    });
+
     displayResults(tokens, errorCount);
     
     if (errorCount > 0) {
-        showModal('error', 'LEXICAL ERROR DETECTED!', `Invalid token or symbol found in the source code.`);
+        // Show the first error message found for better UX
+        const firstError = tokens.find(t => t.type === TokenType.ERROR);
+        const msg = firstError.lexeme.startsWith('Type Error') 
+            ? firstError.lexeme 
+            : `Invalid token or symbol found in the source code.`;
+            
+        showModal('error', 'ERROR DETECTED!', msg);
     } else {
-        showModal('success', 'SUCCESSFUL ANALYSIS!', 'Lexical analysis completed successfully. All tokens are identified correctly.');
+        showModal('success', 'SUCCESSFUL ANALYSIS!', 'Lexical analysis completed successfully.');
     }
 }
 
@@ -687,6 +877,8 @@ class SyntaxHighlighter {
         this.syncScroll();
     }
     
+// ... inside class SyntaxHighlighter ...
+
     applyHighlighting(code) {
         const colors = {
             keyword: '#C586C0',
@@ -707,7 +899,8 @@ class SyntaxHighlighter {
                        .replace(/</g, '&lt;')
                        .replace(/>/g, '&gt;');
         
-        // Apply syntax highlighting with temporary markers to avoid double-escaping
+        // Apply syntax highlighting with temporary markers
+        
         // Comments
         result = result.replace(/(#[^\n]*)/g, '###COMMENT_START###$1###COMMENT_END###');
         
@@ -727,15 +920,26 @@ class SyntaxHighlighter {
         result = result.replace(operatorPattern, '###OPERATOR_START###$1###OPERATOR_END###');
         
         // Delimiters
-        result = result.replace(/([(){}\[\]:;,])/g, '###DELIMITER_START###$1###DELIMITER_END###');
+        result = result.replace(/(&lt;|&gt;|&amp;)|([(){}\[\]:;,])/g, function(match, entity, delimiter) {
+            if (entity) {
+                return entity; 
+            }
+            return '###DELIMITER_START###' + delimiter + '###DELIMITER_END###';
+        });
         
-        // Replace markers with actual HTML spans
-        result = result.replace(/###COMMENT_START###(.*?)###COMMENT_END###/g, `<span style="color: ${colors.comment}; font-style: italic;">$1</span>`);
-        result = result.replace(/###STRING_START###(.*?)###STRING_END###/g, `<span style="color: ${colors.string};">$1</span>`);
-        result = result.replace(/###NUMBER_START###(.*?)###NUMBER_END###/g, `<span style="color: ${colors.number};">$1</span>`);
-        result = result.replace(/###KEYWORD_START###(.*?)###KEYWORD_END###/g, `<span style="color: ${colors.keyword}; font-weight: bold;">$1</span>`);
-        result = result.replace(/###OPERATOR_START###(.*?)###OPERATOR_END###/g, `<span style="color: ${colors.operator};">$1</span>`);
-        result = result.replace(/###DELIMITER_START###(.*?)###DELIMITER_END###/g, `<span style="color: ${colors.delimiter};">$1</span>`);
+        // === FIX STARTS HERE ===
+        // Replace markers with actual HTML spans using [\s\S]*? to allow matching across newlines
+        
+        result = result.replace(/###COMMENT_START###([\s\S]*?)###COMMENT_END###/g, `<span style="color: ${colors.comment}; font-style: italic;">$1</span>`);
+        
+        // This is the specific fix for your issue:
+        result = result.replace(/###STRING_START###([\s\S]*?)###STRING_END###/g, `<span style="color: ${colors.string};">$1</span>`);
+        
+        result = result.replace(/###NUMBER_START###([\s\S]*?)###NUMBER_END###/g, `<span style="color: ${colors.number};">$1</span>`);
+        result = result.replace(/###KEYWORD_START###([\s\S]*?)###KEYWORD_END###/g, `<span style="color: ${colors.keyword}; font-weight: bold;">$1</span>`);
+        result = result.replace(/###OPERATOR_START###([\s\S]*?)###OPERATOR_END###/g, `<span style="color: ${colors.operator};">$1</span>`);
+        result = result.replace(/###DELIMITER_START###([\s\S]*?)###DELIMITER_END###/g, `<span style="color: ${colors.delimiter};">$1</span>`);
+        // === FIX ENDS HERE ===
         
         return result;
     }
