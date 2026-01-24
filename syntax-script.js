@@ -89,144 +89,247 @@ function performSyntaxAnalysis(code) {
     const lines = code.split('\n');
     const errors = [];
     
-    // Define what words create variables
+    // === 0. GLOBAL STATE ===
+    const declaredVars = new Set();
+    let braceBalance = 0; 
+    let inMultiLineComment = false; 
+    
+    // UPDATED KEYWORDS based on your requirements
     const DECLARATION_KEYWORDS = ['NUMBS', 'DECI', 'DUO', 'LETT', 'TEXT', 'BOOL', 'SMALL', 'BIG'];
     const MODIFIERS = ['CAP', 'NOCAP', 'FIXED', 'SHADY'];
+    
+    // UPDATED CONTROL FLOW MAPPING:
+    // FR=For, CYCLE=While, BIND=Struct, SWITCH=Switch, IF=If, ELSE=Else, DO=Do, ENUM=Enum
+    const CONTROL_FLOW = ['IF', 'ELSE', 'FR', 'CYCLE', 'SWITCH', 'DO', 'BIND', 'ENUM'];
+    
+    const ALLOWED_OPS = ['+', '-', '*', '/', '%', '++', '--', '=', '*=', '+=', '-=', '/=', '%=', '&=', '|=', '^=', '>>=', '<<=', '==', '!=', '>=', '<=', '>', '<', '!'];
 
     lines.forEach((line, index) => {
         const lineNum = index + 1;
-        
-        // === 1. STRIP COMMENTS ===
-        let trimmedLine = line.split('//')[0];
-        trimmedLine = trimmedLine.split('#')[0].trim();
+        let currentLine = line;
 
+        // === 0a. MULTI-LINE COMMENT STRIPPING ===
+        if (inMultiLineComment) {
+            const closeIndex = currentLine.indexOf('*/');
+            if (closeIndex !== -1) {
+                inMultiLineComment = false;
+                currentLine = currentLine.substring(closeIndex + 2);
+            } else {
+                return; 
+            }
+        }
+        currentLine = currentLine.replace(/\/\*.*?\*\//g, '');
+        if (currentLine.includes('*/')) {
+             errors.push({ line: lineNum, description: "Syntax Error: Unexpected closing comment '*/'" });
+        }
+        const openIndex = currentLine.indexOf('/*');
+        if (openIndex !== -1) {
+            inMultiLineComment = true;
+            currentLine = currentLine.substring(0, openIndex);
+        }
+
+        // Standard cleanup
+        let trimmedLine = currentLine.split('//')[0].split('#')[0].trim();
         if (!trimmedLine) return;
 
-        // A. Define the strict list of allowed operators
-        const ALLOWED_OPS = [
-            // Arithmetic
-            '+', '-', '*', '/', '%', 
-            '++', '--', 
-            // Assignment
-            '=', '*=', '+=', '-=', '/=', '%=', 
-            '&=', '|=', '^=', '>>=', '<<=',
-            // Comparison (ADDED THESE)
-            '==', '!=', '>=', '<=', '>', '<', '!' 
-        ];
+        const tokenParts = trimmedLine.split(/\s+/);
 
-        // B. Temporarily remove content inside quotes to prevent false alarms 
+        // === 0b. BRACE BALANCE ===
+        const openCount = (trimmedLine.match(/{/g) || []).length;
+        const closeCount = (trimmedLine.match(/}/g) || []).length;
+        braceBalance += (openCount - closeCount);
+        if (braceBalance < 0) {
+            errors.push({ line: lineNum, description: "Syntax Error: Unexpected closing brace '}'" });
+            braceBalance = 0;
+        }
+
+        // === 0c. TRACK DECLARATIONS (Memory) ===
+        let newVar = null;
+        if (DECLARATION_KEYWORDS.includes(tokenParts[0])) {
+            newVar = tokenParts[1];
+        } else if (MODIFIERS.includes(tokenParts[0]) && DECLARATION_KEYWORDS.includes(tokenParts[1])) {
+            newVar = tokenParts[2];
+        }
+        if (newVar) {
+            newVar = newVar.split(/[=;]/)[0].trim();
+            if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(newVar)) {
+                declaredVars.add(newVar);
+            }
+        }
+
+        // === 1. LEXICAL CHECK ===
         const cleanLine = trimmedLine.replace(/"[^"]*"/g, '""').replace(/'[^']*'/g, "''");
-
-        // C. Find all sequences of operator characters
-        //    Matches combinations of: + - * / % = & | ^ > < !
         const foundOps = cleanLine.match(/[+\-*/%=&|^><!]+/g);
-
         if (foundOps) {
             foundOps.forEach(op => {
-                // If the operator found is NOT in the allowed list, report error
-                if (!ALLOWED_OPS.includes(op)) {
-                    errors.push({
-                        line: lineNum,
-                        description: `Lexical Error: Invalid operator '${op}' detected.`
-                    });
+                // Exclude valid tokens that look like ops but might be part of ZAVED or block syntax if needed
+                if (!ALLOWED_OPS.includes(op) && !trimmedLine.includes('ZAVED') && !trimmedLine.includes('{')) {
+                    errors.push({ line: lineNum, description: `Lexical Error: Invalid operator '${op}' detected.` });
                 }
             });  
         }
 
         // === 2. SEMICOLON CHECK ===
-        // Ignore lines ending with '{', '}', or empty lines
+        // Allow statements ending in ; or { or }
         if (!trimmedLine.endsWith(';') && !trimmedLine.endsWith('{') && !trimmedLine.endsWith('}')) {
-            errors.push({
-                line: lineNum,
-                description: 'Missing semicolon at end of statement'
-            });
+            errors.push({ line: lineNum, description: 'Missing semicolon at end of statement' });
         }
 
-        // === 3. LETT CHECK (Char) ===
-        if (trimmedLine.startsWith('LETT') || trimmedLine.startsWith('Lett')) {
-            const parts = trimmedLine.split(/\s+/);
-            if (parts[0] !== 'LETT') errors.push({ line: lineNum, description: 'Invalid keyword - use LETT (uppercase)' });
+        // === 3. TYPE ASSIGNMENT CHECK (LETT & TEXT) ===
+        if (trimmedLine.includes('=')) {
+            let splitIdx = trimmedLine.indexOf('=');
+            let leftPart = trimmedLine.substring(0, splitIdx).trim();
+            let rightPart = trimmedLine.substring(splitIdx + 1).trim();
             
-            if (trimmedLine.includes('=')) {
-                const splitLine = trimmedLine.split('=');
-                let value = splitLine[1].trim();
-                if (value.endsWith(';')) value = value.slice(0, -1).trim();
+            if (rightPart.endsWith(';')) rightPart = rightPart.slice(0, -1).trim();
 
-                if (!value.startsWith("'") || !value.endsWith("'")) {
-                    errors.push({ line: lineNum, description: "Type Error: 'LETT' requires a value in single quotes (e.g., 'A')" });
+            const leftTokens = leftPart.split(/\s+/);
+            let varType = leftTokens[0];
+            if (MODIFIERS.includes(varType) && leftTokens.length > 1) {
+                varType = leftTokens[1];
+            }
+
+            // TEXT Validation
+            if (varType === 'TEXT') {
+                if (!rightPart.startsWith('"')) {
+                    errors.push({ line: lineNum, description: "Syntax Error: TEXT value must start with a double quote" });
+                } else if (rightPart === '"' || !rightPart.endsWith('"')) {
+                     errors.push({ line: lineNum, description: "Syntax Error: TEXT value missing closing double quote" });
+                }
+            }
+
+            // LETT Validation
+            if (varType === 'LETT') {
+                if (!rightPart.startsWith("'")) {
+                    errors.push({ line: lineNum, description: "Syntax Error: LETT value must start with a single quote" });
+                } else if (rightPart === "'" || !rightPart.endsWith("'")) {
+                    errors.push({ line: lineNum, description: "Syntax Error: LETT value missing closing single quote" });
+                } else {
+                    let content = rightPart.slice(1, -1);
+                    if (content.length !== 1) {
+                         errors.push({ line: lineNum, description: `Syntax Error: LETT expects exactly 1 character, found ${content.length}` });
+                    }
                 }
             }
         }
 
-        // === 4. TEXT CHECK (String) ===
-        if (trimmedLine.startsWith('TEXT')) {
-            if (trimmedLine.includes('=')) {
-                const splitLine = trimmedLine.split('=');
-                let value = splitLine[1].trim();
-                if (value.endsWith(';')) value = value.slice(0, -1).trim();
-
-                if (!value.startsWith('"') || !value.endsWith('"')) {
-                    errors.push({ line: lineNum, description: "Type Error: 'TEXT' requires a value enclosed in double quotes (e.g., \"Hello\")" });
-                }
-            }
-        }
-
-        // === 5. SPILL (PRINT) CHECK ===
+        // === 5. SPILL (EZPRINT + CHAINZ) ===
         if (trimmedLine.startsWith('SPILL')) {
-            // Extract content between parentheses: SPILL("text", var) -> "text", var
-            const match = trimmedLine.match(/SPILL\s*\((.*)\)/);
-            if (match) {
-                let content = match[1].trim();
+            const chainMatches = trimmedLine.match(/\((.*?)\)/g);
+            if (!chainMatches) {
+                 errors.push({ line: lineNum, description: "Syntax Error: SPILL requires arguments in parentheses" });
+            } else {
+                chainMatches.forEach(group => {
+                    let content = group.slice(1, -1).trim();
+                    const quoteCount = (content.match(/"/g) || []).length;
+                    if (quoteCount % 2 !== 0) {
+                        errors.push({ line: lineNum, description: "Syntax Error: Missing double quotation in SPILL" });
+                        return;
+                    }
+                    let structureCheck = content.replace(/"[^"]*"/g, "###STR###");
+                    if (/(###STR###|[a-zA-Z0-9_]+)\s+(###STR###|[a-zA-Z0-9_]+)/.test(structureCheck)) {
+                         errors.push({ line: lineNum, description: "Syntax Error: Missing comma between arguments" });
+                    }
+                    let safeContent = content.replace(/"[^"]*"/g, match => match.replace(/,/g, '###COMMA###'));
+                    let args = safeContent.split(',');
+                    args.forEach(arg => {
+                        arg = arg.trim();
+                        if (arg && !arg.startsWith('"') && !/^\d+$/.test(arg)) {
+                            if (!declaredVars.has(arg)) {
+                                errors.push({ line: lineNum, description: `NameError: Variable '${arg}' is not defined` });
+                            }
+                        }
+                    });
+                });
+            }
+        }
+
+        // === 7. BLOCK LOGIC & ZAVED CHECK ===
+        // Handles "FR", "SWITCH", "ZAVED", etc.
+        
+        const firstToken = tokenParts[0];
+
+        // Case A: Line indicates the start of a block (ends with '{')
+        if (trimmedLine.endsWith('{')) {
+            
+            // 1. Check if it is a ZAVED block
+            if (firstToken === 'ZAVED') {
+                // Valid ZAVED syntax: "ZAVED identifier {"
+                let hasIdentifier = false;
                 
-                // Count the number of double quotes in the content
-                const quoteCount = (content.match(/"/g) || []).length;
+                // We need at least 2 parts: [ZAVED, identifier{] or [ZAVED, identifier, {]
+                if (tokenParts.length > 1) {
+                    let potentialId = tokenParts[1];
+                    // If the token is NOT just "{" or "ZAVED"
+                    if (potentialId && potentialId !== '{') {
+                        // Check if identifier is valid (e.g. not starting with number)
+                        let cleanId = potentialId.replace('{', '');
+                        if (cleanId.length > 0) {
+                            hasIdentifier = true;
+                        }
+                    }
+                }
                 
-                if (quoteCount % 2 !== 0) {
-                    errors.push({ 
-                        line: lineNum, 
-                        description: "Syntax Error: Missing closing quote in SPILL statement" 
+                if (!hasIdentifier) {
+                    errors.push({ line: lineNum, description: "Syntax Error: Missing identifier for ZAVED block" });
+                }
+            }
+            
+            // 2. Check if it is a valid Control Flow block (FR, SWITCH, etc.)
+            // We allow exact keyword matches OR keywords immediately followed by parenthesis
+            else {
+                let isControlFlow = false;
+                
+                // Check exact keywords
+                if (CONTROL_FLOW.includes(firstToken)) {
+                    isControlFlow = true;
+                }
+                // Check keywords with attached parens like "FR(" or "IF("
+                else {
+                    CONTROL_FLOW.forEach(kw => {
+                        if (firstToken.startsWith(kw + '(')) {
+                            isControlFlow = true;
+                        }
                     });
                 }
+
+                if (!isControlFlow) {
+                    errors.push({ line: lineNum, description: "Syntax Error: Custom blocks must start with keyword 'ZAVED'" });
+                }
             }
         }
-
-        // === 6. IDENTIFIER VALIDATION ===
-        const tokens = trimmedLine.split(/[\s=;]+/);
-        let identifier = null;
-
-        // Check: FIXED NUMBS pi (Modifier + Type)
-        if (tokens.length >= 3 && MODIFIERS.includes(tokens[0]) && DECLARATION_KEYWORDS.includes(tokens[1])) {
-            identifier = tokens[2];
+        
+        // Case B: Line starts with ZAVED but does NOT end with '{'
+        else if (firstToken === 'ZAVED') {
+            errors.push({ line: lineNum, description: "Syntax Error: ZAVED block must end with opening brace '{'" });
         }
-        // Check: NUMBS age (Type only)
-        else if (tokens.length >= 2 && DECLARATION_KEYWORDS.includes(tokens[0])) {
-            identifier = tokens[1];
+
+        // === 6. IDENTIFIER VALIDATION (FIXED) ===
+        let identifier = null;
+        if (tokenParts.length >= 3 && MODIFIERS.includes(tokenParts[0]) && DECLARATION_KEYWORDS.includes(tokenParts[1])) {
+            identifier = tokenParts[2];
+        } else if (tokenParts.length >= 2 && DECLARATION_KEYWORDS.includes(tokenParts[0])) {
+            identifier = tokenParts[1];
         }
 
         if (identifier) {
+            identifier = identifier.split(/[=;]/)[0].trim();
             if (/^\d/.test(identifier)) {
                 errors.push({ line: lineNum, description: `Invalid identifier '${identifier}': Cannot start with a number` });
-            }
+            } 
             else if (/[^a-zA-Z0-9_]/.test(identifier)) {
                 errors.push({ line: lineNum, description: `Invalid identifier '${identifier}': Cannot contain special characters` });
             }
         }
-
-        // === 7. ASSIGNMENT SYNTAX CHECK ===
-        const firstWord = tokens[0];
-        const isDeclaration = DECLARATION_KEYWORDS.includes(firstWord) || MODIFIERS.includes(firstWord);
-
-        if (isDeclaration && trimmedLine.includes('=') && !trimmedLine.includes('==')) {
-            const beforeEquals = trimmedLine.split('=')[0].trim();
-            const parts = beforeEquals ? beforeEquals.split(/\s+/) : [];
-            
-            const isModifier = parts.length === 3 && MODIFIERS.includes(parts[0]);
-            
-            if (!beforeEquals || (parts.length > 2 && !isModifier)) {
-                errors.push({ line: lineNum, description: 'Invalid assignment syntax' });
-            }
-        }
     });
+
+    // === FINAL CHECKS ===
+    if (braceBalance > 0) {
+        errors.push({ line: lines.length, description: "Syntax Error: Missing closing curly brace '}'" });
+    }
+    if (inMultiLineComment) {
+        errors.push({ line: lines.length, description: "Syntax Error: Unclosed multi-line comment. Expected '*/'" });
+    }
 
     return errors;
 }
