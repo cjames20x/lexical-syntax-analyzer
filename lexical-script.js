@@ -33,50 +33,51 @@ const TokenType = {
     OP_INCREMENT: 'OP_INCRE',
     OP_DECREMENT: 'OP_DECRE',
     // KEYWORDS
-    KW_ALIAS: 'KW_ALIAS',
-    KW_BIG: 'KW_BIG',
-    KW_BLEND: 'KW_BLEND',
-    KW_BOOL: 'KW_BOOL',
-    KW_BOUNCE: 'KW_BOUNCE',
-    KW_CAP: 'KW_CAP',
-    KW_CASE: 'KW_CASE',
-    KW_CORE: 'KW_CORE',
-    KW_DECI: 'KW_DECI',
-    KW_DOUBLE: 'KW_DOUBLE',
-    KW_DROP: 'KW_DROP',
+    KW_ALIAS: 'KW_ALIAS', //typedef
+    KW_BIG: 'KW_BIG', //long
+    KW_BLEND: 'KW_BLEND', //union
+    KW_BOOL: 'KW_BOOL', //bool
+    KW_BOUNCE: 'KW_BOUNCE', //exit
+    KW_CAP: 'KW_CAP', //signed
+    KW_CASE: 'KW_CASE', //case
+    KW_CORE: 'KW_CORE', //main
+    KW_CYCLE: 'KW_CYCLE', //while
+    KW_DECI: 'KW_DECI', //float
+    KW_DO: 'KW_DO', //do
+    KW_DOUBLE: 'KW_DOUBLE', //double
+    KW_DROP: 'KW_DROP', //return
     KW_DUO: 'KW_DUO',
-    KW_ELSE: 'KW_ELSE',
+    KW_ELSE: 'KW_ELSE', //else
     KW_EMOJI: 'KW_EMOJI',
-    KW_EMPTY: 'KW_EMPTY',
-    KW_ENUM: 'KW_ENUM',
-    KW_FAM: 'KW_FAM',
-    KW_FIXED: 'KW_FIXED',
-    KW_FOR: 'KW_FOR',
-    KW_GRAB: 'KW_GRAB',
-    KW_IF: 'KW_IF',
+    KW_EMPTY: 'KW_EMPTY', //void
+    KW_ENUM: 'KW_ENUM', //enum
+    KW_FAM: 'KW_FAM', //arrays
+    KW_FIXED: 'KW_FIXED', //const
+    KW_FR: 'KW_FR', //for 
+    KW_GRAB: 'KW_GRAB', //grab
+    KW_IF: 'KW_IF', //if
     KW_IMPORT: 'KW_IMPORT',
-    KW_LENGTH: 'KW_LENGTH',
-    KW_LETT: 'KW_LETT',
-    KW_MAXI: 'KW_MAXI',
+    KW_LENGTH: 'KW_LENGTH', //length 
+    KW_LETT: 'KW_LETT', //char
+    KW_MAXI: 'KW_MAXI', 
     KW_MINI: 'KW_MINI',
     KW_MATIC: 'KW_MATIC',
     KW_NEXT: 'KW_NEXT',
-    KW_NOCAP: 'KW_NOCAP',
-    KW_NORM: 'KW_NORM',
-    KW_NUMBS: 'KW_NUMBS',
-    KW_OUT: 'KW_OUT',
-    KW_SMALL: 'KW_SMALL',
-    KW_SHADY: 'KW_SHADY',
-    KW_SPILL: 'KW_SPILL',
-    KW_STAY: 'KW_STAY',
-    KW_STOP: 'KW_STOP',
+    KW_NOCAP: 'KW_NOCAP', //unsigned
+    KW_NORM: 'KW_NORM', //default
+    KW_NUMBS: 'KW_NUMBS', //int
+    KW_OUT: 'KW_OUT', //extern 
+    KW_SMALL: 'KW_SMALL', //short
+    KW_SHADY: 'KW_SHADY', //volatile
+    KW_SPILL: 'KW_SPILL', //printf
+    KW_STAY: 'KW_STAY', 
+    KW_STOP: 'KW_STOP', //break
     KW_STRUCT: 'KW_STRUCT',
     KW_SWIM: 'KW_SWIM',
-    KW_SWITCH: 'KW_SWITCH',
-    KW_TAG: 'KW_TAG',
-    KW_TEXT: 'KW_TEXT',
+    KW_SWITCH: 'KW_SWITCH', //switch
+    KW_TAG: 'KW_TAG', //register
+    KW_TEXT: 'KW_TEXT', //string
     KW_VIBE: 'KW_VIBE',
-    KW_WHILE: 'KW_WHILE',
     KW_ZAVED: 'KW_ZAVED',
     // FUNCTIONS
     FUNC_AVG: 'FUNC_AVG',
@@ -110,7 +111,9 @@ const KEYWORDS = {
     'CAP': TokenType.KW_CAP,
     'CASE': TokenType.KW_CASE,
     'CORE': TokenType.KW_CORE,
+    'CYCLE': TokenType.KW_CYCLE,
     'DECI': TokenType.KW_DECI,
+    'DO': TokenType.KW_DO,
     'DOUBLE': TokenType.KW_DOUBLE,
     'DROP': TokenType.KW_DROP,
     'DUO': TokenType.KW_DUO,
@@ -120,7 +123,7 @@ const KEYWORDS = {
     'ENUM': TokenType.KW_ENUM,
     'FAM': TokenType.KW_FAM,
     'FIXED': TokenType.KW_FIXED,
-    'FOR': TokenType.KW_FOR,
+    'FR': TokenType.KW_FR,
     'GRAB': TokenType.KW_GRAB,
     'IF': TokenType.KW_IF,
     'IMPORT': TokenType.KW_IMPORT,
@@ -650,6 +653,406 @@ function validateTokens(tokens) {
     return tokens;
 }
 
+function validateSpillChains(tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+        // We only care about the SPILL keyword
+        if (tokens[i].type === TokenType.KW_SPILL) {
+            
+            let currentOffset = 1;
+            let chainActive = true;
+
+            // Loop to consume as many ("String") groups as possible
+            while (chainActive) {
+                // Check if we ran out of tokens unexpectedly
+                if (i + currentOffset >= tokens.length) {
+                    tokens[i].type = TokenType.ERROR;
+                    tokens[i].lexeme = "Error: Unexpected end of file. Missing ';'";
+                    break;
+                }
+
+                const nextToken = tokens[i + currentOffset];
+
+                // CASE 1: The Chain is ending (We see a Semicolon)
+                if (nextToken.type === TokenType.DELI_SEMICOLON) {
+                    chainActive = false; // Stop checking, this is valid
+                    // Note: We don't increment i here, the main loop will continue
+                    break; 
+                }
+
+                // CASE 2: We expect a '(' to start a print group
+                if (nextToken.type !== TokenType.DELI_LPAREN) {
+                    nextToken.type = TokenType.ERROR;
+                    nextToken.lexeme = `Syntax Error: Expected '(' or ';' after SPILL, found '${nextToken.lexeme}'`;
+                    chainActive = false;
+                    break;
+                }
+
+                // Check specifically for the pattern: ( STRING )
+                
+                // 1. Check for String (DELI_QUOTE is what your lexer calls string literals)
+                const stringToken = tokens[i + currentOffset + 1];
+                if (!stringToken || stringToken.type !== TokenType.DELI_QUOTE) {
+                    // Use the invalid token to mark the error
+                    const errorToken = stringToken || nextToken; 
+                    errorToken.type = TokenType.ERROR;
+                    errorToken.lexeme = `Syntax Error: Expected string literal inside '()', found '${errorToken ? errorToken.lexeme : 'EOF'}'`;
+                    chainActive = false;
+                    break;
+                }
+
+                // 2. Check for closing ')'
+                const closeParen = tokens[i + currentOffset + 2];
+                if (!closeParen || closeParen.type !== TokenType.DELI_RPAREN) {
+                     // If the token is missing or not a ), mark error
+                     const errorToken = closeParen || stringToken;
+                     errorToken.type = TokenType.ERROR;
+                     errorToken.lexeme = `Syntax Error: Missing closing ')' after string`;
+                     chainActive = false;
+                     break;
+                }
+
+                // If we get here, we successfully found ("String"). 
+                // Move the offset by 3 tokens: (, "String", )
+                currentOffset += 3;
+            }
+        }
+    }
+    return tokens;
+}
+
+function validateEzPrint(tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+        // We only look for SPILL, so LETT and other keywords are ignored
+        if (tokens[i].type === TokenType.KW_SPILL) {
+            
+            // 1. Check for opening parenthesis: SPILL(
+            if (i + 1 >= tokens.length || tokens[i + 1].type !== TokenType.DELI_LPAREN) {
+                const errorToken = tokens[i + 1] || tokens[i];
+                errorToken.type = TokenType.ERROR;
+                errorToken.lexeme = `Syntax Error: Missing parentheses in call to 'SPILL'. Did you mean 'SPILL(...)'?`;
+                continue;
+            }
+
+            // 2. Scan inside the parentheses
+            let current = i + 2; // Skip 'SPILL' and '('
+            let expectingComma = false; // We expect a Value first
+
+            while (current < tokens.length) {
+                const token = tokens[current];
+
+                // Check for closing parenthesis ')'
+                if (token.type === TokenType.DELI_RPAREN) {
+                    // Ensure a semicolon follows the closing parenthesis
+                    const nextToken = tokens[current + 1];
+                    if (!nextToken || nextToken.type !== TokenType.DELI_SEMICOLON) {
+                        token.type = TokenType.ERROR;
+                        token.lexeme = `Syntax Error: Missing semicolon ';' after SPILL statement`;
+                    }
+                    // Valid SPILL found, stop checking this group
+                    // Update main loop 'i' to skip past this processed block
+                    i = current; 
+                    break;
+                }
+
+                if (expectingComma) {
+                    // After a value (String/Var), we expect a Comma
+                    if (token.type === TokenType.DELI_COMMA) {
+                        expectingComma = false; // Found comma, now we expect a value again
+                    } else {
+                        token.type = TokenType.ERROR;
+                        token.lexeme = `Syntax Error: Expected ',' or ')', found '${token.lexeme}'`;
+                        // Stop checking to prevent cascading errors
+                        i = current;
+                        break; 
+                    }
+                } else {
+                    // We expect a Value: String (DELI_QUOTE), Number, or Identifier
+                    const validTypes = [
+                        TokenType.DELI_QUOTE, 
+                        TokenType.NUMBER, 
+                        TokenType.IDENTIFIER
+                    ];
+
+                    if (validTypes.includes(token.type)) {
+                        expectingComma = true; // Found value, now we expect a comma
+                    } else {
+                        token.type = TokenType.ERROR;
+                        token.lexeme = `Syntax Error: Unexpected argument '${token.lexeme}'. Expected String, Number, or Variable.`;
+                        i = current;
+                        break;
+                    }
+                }
+                current++;
+            }
+        }
+    }
+    return tokens;
+}
+
+function validateZaved(tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+        // We only care if we see the ZAVED keyword
+        if (tokens[i].type === TokenType.KW_ZAVED) {
+            
+            // 1. Check for Identifier (Name of the block)
+            // Pattern required: ZAVED name
+            if (i + 1 >= tokens.length || tokens[i + 1].type !== TokenType.IDENTIFIER) {
+                const errorToken = tokens[i + 1] || tokens[i];
+                errorToken.type = TokenType.ERROR;
+                errorToken.lexeme = `Syntax Error: 'ZAVED' must be followed by an identifier name. Found: '${errorToken.lexeme}'`;
+                // Skip the rest of this check to avoid cascading errors
+                continue; 
+            }
+
+            // 2. Check for Opening Brace '{'
+            // Pattern required: ZAVED name {
+            if (i + 2 >= tokens.length || tokens[i + 2].type !== TokenType.DELI_LBRACE) {
+                const errorToken = tokens[i + 2] || tokens[i + 1];
+                errorToken.type = TokenType.ERROR;
+                errorToken.lexeme = `Syntax Error: Expected '{' after ZAVED identifier. Found: '${errorToken.lexeme}'`;
+                continue;
+            }
+
+            // 3. Check for Closing Brace '}'
+            // We need to scan forward to find the matching closing brace
+            let braceBalance = 1; // We start with 1 because we found the first '{'
+            let foundClose = false;
+            let j = i + 3; // Start looking after the first '{'
+
+            while (j < tokens.length) {
+                if (tokens[j].type === TokenType.DELI_LBRACE) {
+                    braceBalance++; // Nested block found
+                } else if (tokens[j].type === TokenType.DELI_RBRACE) {
+                    braceBalance--; // Closing brace found
+                }
+
+                if (braceBalance === 0) {
+                    foundClose = true;
+                    // We found the end of the ZAVED block.
+                    // Update main loop 'i' to continue scanning AFTER this block
+                    // This prevents re-scanning tokens inside the block
+                    // i = j; 
+                    break; 
+                }
+                j++;
+            }
+
+            if (!foundClose) {
+                // If we reached the end of the file without balance hitting 0
+                tokens[i + 2].type = TokenType.ERROR;
+                tokens[i + 2].lexeme = `Syntax Error: Missing closing '}' for ZAVED block '${tokens[i+1].lexeme}'`;
+            }
+        }
+    }
+    return tokens;
+}
+
+// 1. STRICT TYPO CHECKER (Catches "NUMBSs age")
+function validateTypos(tokens) {
+    for (let i = 0; i < tokens.length - 1; i++) {
+        const current = tokens[i];
+        const next = tokens[i+1];
+
+        // IF we see [Identifier] [Identifier] (e.g. "NUMBSs age")
+        // AND the first identifier looks like a plural or typo of a keyword
+        if (current.type === TokenType.IDENTIFIER && next.type === TokenType.IDENTIFIER) {
+            current.type = TokenType.ERROR;
+            current.lexeme = `Syntax Error: Unknown keyword or type '${current.lexeme}'. Did you mean 'NUMBS', 'TEXT', etc?`;
+        }
+    }
+    return tokens;
+}
+
+// 2. C-STYLE DECLARATION ENFORCER (Catches missing ; and commas)
+function validateCStyleDeclarations(tokens) {
+    const dataTypes = [
+        TokenType.KW_NUMBS, TokenType.KW_DECI, TokenType.KW_BOOL, 
+        TokenType.KW_LETT, TokenType.KW_TEXT
+    ];
+
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+
+        // START OF DECLARATION FOUND (e.g. "NUMBS")
+        if (dataTypes.includes(token.type)) {
+            let currentIdx = i + 1;
+            let state = 'EXPECT_NAME'; // State Machine Tracker
+
+            while (currentIdx < tokens.length) {
+                const t = tokens[currentIdx];
+
+                // 1. CRITICAL: Check for End of File (Missing Semicolon)
+                if (t.type === TokenType.EOF) {
+                    const lastToken = tokens[currentIdx - 1];
+                    lastToken.type = TokenType.ERROR;
+                    lastToken.lexeme = "Syntax Error: Missing semicolon ';' at the end of declaration.";
+                    break;
+                }
+
+                // 2. Handle Semicolon (The only valid end)
+                if (t.type === TokenType.DELI_SEMICOLON) {
+                    if (state === 'EXPECT_VALUE') {
+                        t.type = TokenType.ERROR;
+                        t.lexeme = "Syntax Error: Initializer list ended unexpectedly. Expected value after '='.";
+                    }
+                    // Valid end found. We update the main loop 'i' to skip what we just checked.
+                    i = currentIdx; 
+                    break;
+                }
+
+                // 3. STATE MACHINE LOGIC
+                if (state === 'EXPECT_NAME') {
+                    if (t.type === TokenType.IDENTIFIER) {
+                        state = 'EXPECT_ASSIGN_OR_SEMI';
+                    } else {
+                        t.type = TokenType.ERROR;
+                        t.lexeme = `Syntax Error: Expected variable name, found '${t.lexeme}'.`;
+                        i = currentIdx; break; // Stop checking this statement
+                    }
+                }
+                else if (state === 'EXPECT_ASSIGN_OR_SEMI') {
+                    if (t.type === TokenType.OP_ASSIGN) {
+                        state = 'EXPECT_VALUE';
+                    } else if (t.type === TokenType.DELI_COMMA) {
+                        state = 'EXPECT_NAME'; // "NUMBS a, b" case
+                    } else {
+                        t.type = TokenType.ERROR;
+                        t.lexeme = `Syntax Error: Expected '=' or ',' or ';', found '${t.lexeme}'.`;
+                        i = currentIdx; break;
+                    }
+                }
+                else if (state === 'EXPECT_VALUE') {
+                    // Allowed values in assignment
+                    const validValues = [
+                        TokenType.NUMBER, TokenType.DELI_QUOTE, 
+                        TokenType.IDENTIFIER, TokenType.KW_NOCAP, TokenType.KW_CAP
+                    ];
+                    
+                    if (validValues.includes(t.type)) {
+                        state = 'EXPECT_COMMA_OR_SEMI';
+                    } else {
+                        t.type = TokenType.ERROR;
+                        t.lexeme = `Syntax Error: Invalid value '${t.lexeme}' in assignment.`;
+                        i = currentIdx; break;
+                    }
+                }
+                else if (state === 'EXPECT_COMMA_OR_SEMI') {
+                    if (t.type === TokenType.DELI_COMMA) {
+                        state = 'EXPECT_NAME'; // Found comma, loop back for next var
+                    } else {
+                        // We found something that isn't a comma or semicolon (e.g. "NUMBS a=1 b=2")
+                        t.type = TokenType.ERROR;
+                        t.lexeme = `Syntax Error: Missing ',' or ';' between declarations. Found '${t.lexeme}'.`;
+                        i = currentIdx; break;
+                    }
+                }
+
+                currentIdx++;
+            }
+        }
+    }
+    return tokens;
+}
+
+// Function to catch common loop keyword typos (e.g. FOR instead of FR)
+function validateLoopMistypes(tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+        // We look for IDENTIFIERS because misspelled keywords aren't tokenized as Keywords
+        if (tokens[i].type === TokenType.IDENTIFIER) {
+            const lexeme = tokens[i].lexeme;
+            
+            // Check for 'FOR' (should be FR)
+            if (lexeme === 'FOR') {
+                tokens[i].type = TokenType.ERROR;
+                tokens[i].lexeme = `Syntax Error: Unknown keyword 'FOR'. Did you mean 'FR'?`;
+            }
+            // Check for 'WHILE' (should be CYCLE)
+            else if (lexeme === 'WHILE') {
+                tokens[i].type = TokenType.ERROR;
+                tokens[i].lexeme = `Syntax Error: Unknown keyword 'WHILE'. Did you mean 'CYCLE'?`;
+            }
+        }
+    }
+    return tokens;
+}
+
+// Function to enforce C-style loop syntax (parentheses and braces)
+function validateLoopSyntax(tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+
+        // 1. CHECK FOR FR (For) AND CYCLE (While)
+        // Rules: Must have '(' immediately, and must have a matching ')' later.
+        if (token.type === TokenType.KW_FR || token.type === TokenType.KW_CYCLE) {
+            
+            // A. Check for immediate Opening Parenthesis '('
+            if (i + 1 >= tokens.length || tokens[i + 1].type !== TokenType.DELI_LPAREN) {
+                const errorToken = tokens[i + 1] || token;
+                errorToken.type = TokenType.ERROR;
+                errorToken.lexeme = `Syntax Error: Expected '(' after '${token.lexeme}' statement.`;
+                continue; // Stop checking this loop to prevent cascading errors
+            }
+
+            // B. Check for Matching Closing Parenthesis ')'
+            let parenBalance = 0;
+            let foundClosing = false;
+
+            // Start scanning from the opening '(' we just found
+            for (let j = i + 1; j < tokens.length; j++) {
+                if (tokens[j].type === TokenType.DELI_LPAREN) parenBalance++;
+                if (tokens[j].type === TokenType.DELI_RPAREN) parenBalance--;
+
+                if (parenBalance === 0) {
+                    foundClosing = true;
+                    break; // Found the match!
+                }
+            }
+
+            // If loop finishes and balance is never 0, we are missing a ')'
+            if (!foundClosing) {
+                token.type = TokenType.ERROR;
+                token.lexeme = `Syntax Error: Missing ')' in '${token.lexeme}' loop condition.`;
+            }
+        }
+
+        // 2. CHECK FOR DO
+        // Rules: Must have '{' immediately, and must have a matching '}' later.
+        if (token.type === TokenType.KW_DO) {
+            
+            // A. Check for immediate Opening Brace '{'
+            if (i + 1 >= tokens.length || tokens[i + 1].type !== TokenType.DELI_LBRACE) {
+                const errorToken = tokens[i + 1] || token;
+                errorToken.type = TokenType.ERROR;
+                errorToken.lexeme = `Syntax Error: Expected '{' after 'DO' statement.`;
+                continue;
+            }
+
+            // B. Check for Matching Closing Brace '}'
+            let braceBalance = 0;
+            let foundClosing = false;
+
+            // Start scanning from the opening '{'
+            for (let j = i + 1; j < tokens.length; j++) {
+                if (tokens[j].type === TokenType.DELI_LBRACE) braceBalance++;
+                if (tokens[j].type === TokenType.DELI_RBRACE) braceBalance--;
+
+                if (braceBalance === 0) {
+                    foundClosing = true;
+                    break; // Found the match!
+                }
+            }
+
+            // If loop finishes and balance is never 0, we are missing a '}'
+            if (!foundClosing) {
+                token.type = TokenType.ERROR;
+                token.lexeme = `Syntax Error: Missing '}' to close 'DO' block.`;
+            }
+        }
+    }
+    return tokens;
+}
+
+
 function analyzeCode() {
     const code = document.getElementById('codeEditor').value.trim();
     
@@ -666,41 +1069,46 @@ function analyzeCode() {
     }
 
     const lexer = new Lexer(code);
-    let tokens = []; // Changed to let so we can modify it
+    let tokens = []; 
     
-    // 1. Generate all tokens first
+    // 1. Generate Tokens
     while (true) {
         const token = lexer.scanToken();
         tokens.push(token);
-        if (token.type === TokenType.EOF) {
-            break;
-        }
+        if (token.type === TokenType.EOF) break;
     }
 
-    // 2. RUN VALIDATION (The Fix)
-    // This checks for the LETT rule violations
-    tokens = validateTokens(tokens);
+    // 2. RUN VALIDATIONS (New Order)
+    tokens = validateTokens(tokens);             // Validates LETT 'A'
+    tokens = validateEzPrint(tokens);            // Validates SPILL
+    tokens = validateZaved(tokens);              // Validates ZAVED blocks
+    
+    tokens = validateLoopMistypes(tokens);       // Checks for "FOR" or "WHILE" mistypes
+    tokens = validateLoopSyntax(tokens);         // Checks for missing '(' or '{'
 
-    // 3. Count errors AFTER validation
+    // === NEW C-STYLE CHECKS ===
+    tokens = validateTypos(tokens);              // Checks "NUMBSs age"
+    tokens = validateCStyleDeclarations(tokens); // Checks "NUMBS a=1, b=2;"
+    // ==========================
+
+    // 3. Count Errors
     let errorCount = 0;
     tokens.forEach(token => {
-        if (token.type === TokenType.ERROR) {
-            errorCount++;
-        }
+        if (token.type === TokenType.ERROR) errorCount++;
     });
 
     displayResults(tokens, errorCount);
     
     if (errorCount > 0) {
-        // Show the first error message found for better UX
         const firstError = tokens.find(t => t.type === TokenType.ERROR);
-        const msg = firstError.lexeme.startsWith('Type Error') 
+        // Clean up error message for the modal
+        const msg = firstError.lexeme.includes('Error:') 
             ? firstError.lexeme 
-            : `Invalid token or symbol found in the source code.`;
+            : `Syntax Error: Invalid token detected.`;
             
-        showModal('error', 'ERROR DETECTED!', msg);
+        showModal('error', 'SYNTAX ERROR', msg);
     } else {
-        showModal('success', 'SUCCESSFUL ANALYSIS!', 'Lexical analysis completed successfully.');
+        showModal('success', 'SUCCESSFUL ANALYSIS!', 'Code is valid and follows strict syntax rules.');
     }
 }
 
