@@ -94,14 +94,10 @@ function performSyntaxAnalysis(code) {
     let braceBalance = 0; 
     let inMultiLineComment = false; 
     
-    // UPDATED KEYWORDS based on your requirements
+    // KEYWORDS
     const DECLARATION_KEYWORDS = ['NUMBS', 'DECI', 'DUO', 'LETT', 'TEXT', 'BOOL', 'SMALL', 'BIG'];
     const MODIFIERS = ['CAP', 'NOCAP', 'FIXED', 'SHADY'];
-    
-    // UPDATED CONTROL FLOW MAPPING:
-    // FR=For, CYCLE=While, BIND=Struct, SWITCH=Switch, IF=If, ELSE=Else, DO=Do, ENUM=Enum
     const CONTROL_FLOW = ['IF', 'ELSE', 'FR', 'CYCLE', 'SWITCH', 'DO', 'BIND', 'ENUM'];
-    
     const ALLOWED_OPS = ['+', '-', '*', '/', '%', '++', '--', '=', '*=', '+=', '-=', '/=', '%=', '&=', '|=', '^=', '>>=', '<<=', '==', '!=', '>=', '<=', '>', '<', '!'];
 
     lines.forEach((line, index) => {
@@ -133,6 +129,7 @@ function performSyntaxAnalysis(code) {
         if (!trimmedLine) return;
 
         const tokenParts = trimmedLine.split(/\s+/);
+        const firstToken = tokenParts[0];
 
         // === 0b. BRACE BALANCE ===
         const openCount = (trimmedLine.match(/{/g) || []).length;
@@ -144,10 +141,11 @@ function performSyntaxAnalysis(code) {
         }
 
         // === 0c. TRACK DECLARATIONS (Memory) ===
+        // We track this early so we know what variables exist
         let newVar = null;
-        if (DECLARATION_KEYWORDS.includes(tokenParts[0])) {
+        if (DECLARATION_KEYWORDS.includes(firstToken)) {
             newVar = tokenParts[1];
-        } else if (MODIFIERS.includes(tokenParts[0]) && DECLARATION_KEYWORDS.includes(tokenParts[1])) {
+        } else if (MODIFIERS.includes(firstToken) && DECLARATION_KEYWORDS.includes(tokenParts[1])) {
             newVar = tokenParts[2];
         }
         if (newVar) {
@@ -157,12 +155,49 @@ function performSyntaxAnalysis(code) {
             }
         }
 
+        // === 0d. KEYWORD & TYPO CHECK (NEW) ===
+        // This catches "NUMBSs age = 20;" -> "NUMBSs" is not a keyword.
+        if (!trimmedLine.endsWith('{') && !trimmedLine.endsWith('}')) {
+            let isValidStart = false;
+            
+            // Check against all valid starting tokens
+            if (DECLARATION_KEYWORDS.includes(firstToken)) isValidStart = true;
+            else if (MODIFIERS.includes(firstToken)) isValidStart = true;
+            else if (CONTROL_FLOW.includes(firstToken)) isValidStart = true;
+            else if (firstToken === 'SPILL' || firstToken === 'ZAVED') isValidStart = true;
+            else if (declaredVars.has(firstToken.split(/[=;]/)[0])) isValidStart = true; // Variable assignment
+            
+            // Check for control flow with parens (e.g. "FR(")
+            if (!isValidStart) {
+                CONTROL_FLOW.forEach(kw => { 
+                    if (firstToken.startsWith(kw + '(')) isValidStart = true; 
+                });
+            }
+
+            // Only flag if it looks like code (not empty/comment)
+            if (!isValidStart && firstToken.length > 0) {
+                if (tokenParts.includes('=') || firstToken.includes('=')) {
+                    // Logic: If it has '=', it's likely an assignment or declaration.
+                    // If first token is unknown, it's either a bad type or undeclared var.
+                    
+                    // If the structure is "Word Word = ...", the first Word is likely a Type.
+                    if (tokenParts.length >= 2 && tokenParts[1] !== '=' && !firstToken.includes('=')) {
+                         errors.push({ line: lineNum, description: `Syntax Error: Unrecognized keyword or data type '${firstToken}'` });
+                    } else {
+                         // Structure is "Word = ..." or "Word=..."
+                         errors.push({ line: lineNum, description: `NameError: Variable '${firstToken.split('=')[0]}' is not defined` });
+                    }
+                } else if (trimmedLine.endsWith(';')) {
+                    errors.push({ line: lineNum, description: `Syntax Error: Unrecognized statement starting with '${firstToken}'` });
+                }
+            }
+        }
+
         // === 1. LEXICAL CHECK ===
         const cleanLine = trimmedLine.replace(/"[^"]*"/g, '""').replace(/'[^']*'/g, "''");
         const foundOps = cleanLine.match(/[+\-*/%=&|^><!]+/g);
         if (foundOps) {
             foundOps.forEach(op => {
-                // Exclude valid tokens that look like ops but might be part of ZAVED or block syntax if needed
                 if (!ALLOWED_OPS.includes(op) && !trimmedLine.includes('ZAVED') && !trimmedLine.includes('{')) {
                     errors.push({ line: lineNum, description: `Lexical Error: Invalid operator '${op}' detected.` });
                 }
@@ -170,7 +205,6 @@ function performSyntaxAnalysis(code) {
         }
 
         // === 2. SEMICOLON CHECK ===
-        // Allow statements ending in ; or { or }
         if (!trimmedLine.endsWith(';') && !trimmedLine.endsWith('{') && !trimmedLine.endsWith('}')) {
             errors.push({ line: lineNum, description: 'Missing semicolon at end of statement' });
         }
@@ -245,66 +279,42 @@ function performSyntaxAnalysis(code) {
         }
 
         // === 7. BLOCK LOGIC & ZAVED CHECK ===
-        // Handles "FR", "SWITCH", "ZAVED", etc.
-        
-        const firstToken = tokenParts[0];
-
-        // Case A: Line indicates the start of a block (ends with '{')
         if (trimmedLine.endsWith('{')) {
-            
-            // 1. Check if it is a ZAVED block
+            // 1. ZAVED Check
             if (firstToken === 'ZAVED') {
-                // Valid ZAVED syntax: "ZAVED identifier {"
                 let hasIdentifier = false;
-                
-                // We need at least 2 parts: [ZAVED, identifier{] or [ZAVED, identifier, {]
                 if (tokenParts.length > 1) {
                     let potentialId = tokenParts[1];
-                    // If the token is NOT just "{" or "ZAVED"
                     if (potentialId && potentialId !== '{') {
-                        // Check if identifier is valid (e.g. not starting with number)
                         let cleanId = potentialId.replace('{', '');
-                        if (cleanId.length > 0) {
-                            hasIdentifier = true;
-                        }
+                        if (cleanId.length > 0) hasIdentifier = true;
                     }
                 }
-                
                 if (!hasIdentifier) {
                     errors.push({ line: lineNum, description: "Syntax Error: Missing identifier for ZAVED block" });
                 }
             }
-            
-            // 2. Check if it is a valid Control Flow block (FR, SWITCH, etc.)
-            // We allow exact keyword matches OR keywords immediately followed by parenthesis
+            // 2. Control Flow Check
             else {
                 let isControlFlow = false;
-                
-                // Check exact keywords
-                if (CONTROL_FLOW.includes(firstToken)) {
-                    isControlFlow = true;
-                }
-                // Check keywords with attached parens like "FR(" or "IF("
+                if (CONTROL_FLOW.includes(firstToken)) isControlFlow = true;
                 else {
                     CONTROL_FLOW.forEach(kw => {
-                        if (firstToken.startsWith(kw + '(')) {
-                            isControlFlow = true;
-                        }
+                        if (firstToken.startsWith(kw + '(')) isControlFlow = true;
                     });
                 }
 
                 if (!isControlFlow) {
+                    // Specific error if it looks like a block but isn't a known loop/condition
                     errors.push({ line: lineNum, description: "Syntax Error: Custom blocks must start with keyword 'ZAVED'" });
                 }
             }
         }
-        
-        // Case B: Line starts with ZAVED but does NOT end with '{'
         else if (firstToken === 'ZAVED') {
             errors.push({ line: lineNum, description: "Syntax Error: ZAVED block must end with opening brace '{'" });
         }
 
-        // === 6. IDENTIFIER VALIDATION (FIXED) ===
+        // === 6. IDENTIFIER VALIDATION ===
         let identifier = null;
         if (tokenParts.length >= 3 && MODIFIERS.includes(tokenParts[0]) && DECLARATION_KEYWORDS.includes(tokenParts[1])) {
             identifier = tokenParts[2];
