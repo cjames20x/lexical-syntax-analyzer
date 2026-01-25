@@ -110,9 +110,7 @@ function performSyntaxAnalysis(code) {
             if (closeIndex !== -1) {
                 inMultiLineComment = false;
                 currentLine = currentLine.substring(closeIndex + 2);
-            } else {
-                return; 
-            }
+            } else { return; }
         }
         currentLine = currentLine.replace(/\/\*.*?\*\//g, '');
         if (currentLine.includes('*/')) {
@@ -141,7 +139,6 @@ function performSyntaxAnalysis(code) {
         }
 
         // === 0c. TRACK DECLARATIONS (Memory) ===
-        // We track this early so we know what variables exist
         let newVar = null;
         if (DECLARATION_KEYWORDS.includes(firstToken)) {
             newVar = tokenParts[1];
@@ -149,42 +146,44 @@ function performSyntaxAnalysis(code) {
             newVar = tokenParts[2];
         }
         if (newVar) {
-            newVar = newVar.split(/[=;]/)[0].trim();
+            newVar = newVar.split(/[=;,]/)[0].trim();
             if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(newVar)) {
                 declaredVars.add(newVar);
             }
         }
 
-        // === 0d. KEYWORD & TYPO CHECK (NEW) ===
-        // This catches "NUMBSs age = 20;" -> "NUMBSs" is not a keyword.
+        // === 0d. KEYWORD & TYPO CHECK ===
         if (!trimmedLine.endsWith('{') && !trimmedLine.endsWith('}')) {
             let isValidStart = false;
             
-            // Check against all valid starting tokens
             if (DECLARATION_KEYWORDS.includes(firstToken)) isValidStart = true;
             else if (MODIFIERS.includes(firstToken)) isValidStart = true;
             else if (CONTROL_FLOW.includes(firstToken)) isValidStart = true;
-            else if (firstToken === 'SPILL' || firstToken === 'ZAVED') isValidStart = true;
-            else if (declaredVars.has(firstToken.split(/[=;]/)[0])) isValidStart = true; // Variable assignment
             
-            // Check for control flow with parens (e.g. "FR(")
+            // Allow SPILL, DO-CYCLE, and Operations
+            else if (firstToken === 'SPILL' || firstToken.startsWith('SPILL(') || firstToken === 'ZAVED') isValidStart = true;
+            else if ((firstToken === '}' && tokenParts[1] && tokenParts[1].startsWith('CYCLE')) || firstToken.startsWith('}CYCLE')) isValidStart = true;
+            else {
+                let potentialVar = firstToken.split(/[=;(+]/)[0];
+                if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(potentialVar)) {
+                    if (declaredVars.has(potentialVar)) {
+                        isValidStart = true;
+                    } 
+                    else if (trimmedLine.match(/[+\-*/%=&|^><!]/)) {
+                         isValidStart = true;
+                    }
+                }
+            }
+            
             if (!isValidStart) {
-                CONTROL_FLOW.forEach(kw => { 
-                    if (firstToken.startsWith(kw + '(')) isValidStart = true; 
-                });
+                CONTROL_FLOW.forEach(kw => { if (firstToken.startsWith(kw + '(')) isValidStart = true; });
             }
 
-            // Only flag if it looks like code (not empty/comment)
             if (!isValidStart && firstToken.length > 0) {
                 if (tokenParts.includes('=') || firstToken.includes('=')) {
-                    // Logic: If it has '=', it's likely an assignment or declaration.
-                    // If first token is unknown, it's either a bad type or undeclared var.
-                    
-                    // If the structure is "Word Word = ...", the first Word is likely a Type.
                     if (tokenParts.length >= 2 && tokenParts[1] !== '=' && !firstToken.includes('=')) {
                          errors.push({ line: lineNum, description: `Syntax Error: Unrecognized keyword or data type '${firstToken}'` });
                     } else {
-                         // Structure is "Word = ..." or "Word=..."
                          errors.push({ line: lineNum, description: `NameError: Variable '${firstToken.split('=')[0]}' is not defined` });
                     }
                 } else if (trimmedLine.endsWith(';')) {
@@ -209,52 +208,116 @@ function performSyntaxAnalysis(code) {
             errors.push({ line: lineNum, description: 'Missing semicolon at end of statement' });
         }
 
-        // === 3. TYPE ASSIGNMENT CHECK (LETT & TEXT) ===
-        if (trimmedLine.includes('=')) {
-            let splitIdx = trimmedLine.indexOf('=');
-            let leftPart = trimmedLine.substring(0, splitIdx).trim();
-            let rightPart = trimmedLine.substring(splitIdx + 1).trim();
+        // === 2.5 (ENHANCED) TYPE VALIDATION ===
+        let isDecl = false;
+        let baseType = "";
+        let declStartStr = "";
+
+        if (DECLARATION_KEYWORDS.includes(firstToken)) {
+            isDecl = true;
+            baseType = firstToken;
+            declStartStr = firstToken;
+        } else if (MODIFIERS.includes(firstToken) && DECLARATION_KEYWORDS.includes(tokenParts[1])) {
+            isDecl = true;
+            baseType = tokenParts[1];
+            declStartStr = firstToken + " " + tokenParts[1];
+        }
+
+        if (isDecl) {
+            let contentOnly = trimmedLine.substring(declStartStr.length);
+            if (contentOnly.endsWith(';')) contentOnly = contentOnly.slice(0, -1);
             
-            if (rightPart.endsWith(';')) rightPart = rightPart.slice(0, -1).trim();
+            const parts = contentOnly.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
 
-            const leftTokens = leftPart.split(/\s+/);
-            let varType = leftTokens[0];
-            if (MODIFIERS.includes(varType) && leftTokens.length > 1) {
-                varType = leftTokens[1];
-            }
+            parts.forEach(part => {
+                let segment = part.trim();
+                if (!segment) return; 
 
-            // TEXT Validation
-            if (varType === 'TEXT') {
-                if (!rightPart.startsWith('"')) {
-                    errors.push({ line: lineNum, description: "Syntax Error: TEXT value must start with a double quote" });
-                } else if (rightPart === '"' || !rightPart.endsWith('"')) {
-                     errors.push({ line: lineNum, description: "Syntax Error: TEXT value missing closing double quote" });
-                }
-            }
-
-            // LETT Validation
-            if (varType === 'LETT') {
-                if (!rightPart.startsWith("'")) {
-                    errors.push({ line: lineNum, description: "Syntax Error: LETT value must start with a single quote" });
-                } else if (rightPart === "'" || !rightPart.endsWith("'")) {
-                    errors.push({ line: lineNum, description: "Syntax Error: LETT value missing closing single quote" });
+                if (!segment.includes('=')) {
+                    if (/\s+/.test(segment)) {
+                         errors.push({ line: lineNum, description: `Syntax Error: Missing assignment operator '=' in '${segment}'` });
+                    }
                 } else {
-                    let content = rightPart.slice(1, -1);
-                    if (content.length !== 1) {
-                         errors.push({ line: lineNum, description: `Syntax Error: LETT expects exactly 1 character, found ${content.length}` });
+                    let sides = segment.split('=');
+                    let varName = sides[0].trim();
+                    let val = sides[1].trim();
+
+                    if (/\s+/.test(varName)) {
+                        errors.push({ line: lineNum, description: `Syntax Error: Invalid identifier '${varName}' (spaces not allowed)` });
+                    }
+
+                    if (val === "") {
+                        errors.push({ line: lineNum, description: `Syntax Error: Missing value for variable '${varName}'` });
+                    } else {
+                        const isVariableRef = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(val) && !val.startsWith('"') && !val.startsWith("'") && !/^\d/.test(val);
+                        
+                        if (isVariableRef) {
+                            if (!declaredVars.has(val)) {
+                                errors.push({ line: lineNum, description: `NameError: Variable '${val}' is not defined` });
+                            }
+                        } else {
+                            if (baseType === 'NUMBS' || baseType === 'SMALL' || baseType === 'BIG') {
+                                if (!/^-?\d+$/.test(val)) {
+                                    errors.push({ line: lineNum, description: `Type Error: '${varName}' expects an Integer (assigned value: ${val})` });
+                                }
+                            }
+                            else if (baseType === 'DECI') {
+                                if (!/^-?\d+(\.\d+)?$/.test(val)) {
+                                    errors.push({ line: lineNum, description: `Type Error: '${varName}' expects a Decimal (assigned value: ${val})` });
+                                }
+                            }
+                            else if (baseType === 'TEXT') {
+                                if (!val.startsWith('"') || !val.endsWith('"')) {
+                                    errors.push({ line: lineNum, description: `Type Error: '${varName}' expects a String starting with "` });
+                                }
+                            }
+                            else if (baseType === 'LETT') {
+                                if (!val.startsWith("'") || !val.endsWith("'")) {
+                                    errors.push({ line: lineNum, description: `Type Error: '${varName}' expects a Character starting with '` });
+                                } else if (val.length !== 3) { 
+                                    errors.push({ line: lineNum, description: `Type Error: '${varName}' expects exactly 1 character` });
+                                }
+                            }
+                            else if (baseType === 'BOOL') {
+                                const validBools = ['TRUE', 'FALSE', 'YES', 'NO', '1', '0'];
+                                if (!validBools.includes(val.toUpperCase())) {
+                                    errors.push({ line: lineNum, description: `Type Error: '${varName}' expects a Boolean value` });
+                                }
+                            }
+                        }
                     }
                 }
-            }
+            });
         }
 
         // === 5. SPILL (EZPRINT + CHAINZ) ===
         if (trimmedLine.startsWith('SPILL')) {
+            // --- FIX START: Structural Integrity Check ---
+            // 1. Check for unbalanced quotes first
+            const quoteCount = (trimmedLine.match(/"/g) || []).length;
+            if (quoteCount % 2 !== 0) {
+                 errors.push({ line: lineNum, description: "Syntax Error: Missing double quotation in SPILL" });
+            } 
+            else {
+                // 2. If quotes are balanced, strip them out to strictly check parentheses structure
+                // This prevents parentheses inside strings (e.g., "Hello)") from confusing the count.
+                const cleanLineForParens = trimmedLine.replace(/"[^"]*"/g, '');
+                const openParens = (cleanLineForParens.match(/\(/g) || []).length;
+                const closeParens = (cleanLineForParens.match(/\)/g) || []).length;
+                
+                if (openParens !== closeParens) {
+                    errors.push({ line: lineNum, description: "Syntax Error: Missing parenthesis in SPILL" });
+                }
+            }
+            // --- FIX END ---
+
             const chainMatches = trimmedLine.match(/\((.*?)\)/g);
             if (!chainMatches) {
                  errors.push({ line: lineNum, description: "Syntax Error: SPILL requires arguments in parentheses" });
             } else {
                 chainMatches.forEach(group => {
                     let content = group.slice(1, -1).trim();
+                    // Double-check quotes inside the group (redundant but safe)
                     const quoteCount = (content.match(/"/g) || []).length;
                     if (quoteCount % 2 !== 0) {
                         errors.push({ line: lineNum, description: "Syntax Error: Missing double quotation in SPILL" });
@@ -280,7 +343,6 @@ function performSyntaxAnalysis(code) {
 
         // === 7. BLOCK LOGIC & ZAVED CHECK ===
         if (trimmedLine.endsWith('{')) {
-            // 1. ZAVED Check
             if (firstToken === 'ZAVED') {
                 let hasIdentifier = false;
                 if (tokenParts.length > 1) {
@@ -294,7 +356,6 @@ function performSyntaxAnalysis(code) {
                     errors.push({ line: lineNum, description: "Syntax Error: Missing identifier for ZAVED block" });
                 }
             }
-            // 2. Control Flow Check
             else {
                 let isControlFlow = false;
                 if (CONTROL_FLOW.includes(firstToken)) isControlFlow = true;
@@ -305,8 +366,7 @@ function performSyntaxAnalysis(code) {
                 }
 
                 if (!isControlFlow) {
-                    // Specific error if it looks like a block but isn't a known loop/condition
-                    errors.push({ line: lineNum, description: "Syntax Error: Custom blocks must start with keyword 'ZAVED'" });
+                    errors.push({ line: lineNum, description: "Syntax Error" });
                 }
             }
         }
@@ -323,7 +383,7 @@ function performSyntaxAnalysis(code) {
         }
 
         if (identifier) {
-            identifier = identifier.split(/[=;]/)[0].trim();
+            identifier = identifier.split(/[=;,]/)[0].trim();
             if (/^\d/.test(identifier)) {
                 errors.push({ line: lineNum, description: `Invalid identifier '${identifier}': Cannot start with a number` });
             } 
@@ -343,7 +403,6 @@ function performSyntaxAnalysis(code) {
 
     return errors;
 }
-
 function displayResults(errors) {
     const resultsDiv = document.getElementById('analyzerResults');
     const summaryDiv = document.getElementById('analysisSummary');
